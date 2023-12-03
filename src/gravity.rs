@@ -1,8 +1,9 @@
-pub const G: f32 = 20.0;
+pub const G: f32 = 10.0;
 use bevy::prelude::*;
 #[derive(Component)]
-pub struct GravityBody {
+pub struct Mass {
     pub mass: f32,
+    pub radius: f32,
 }
 
 #[derive(Component)]
@@ -12,21 +13,26 @@ pub struct OrbitalBody {
 
 pub fn apply_gravity(
     time: Res<Time>,
-    mut boddies: Query<(Entity, &mut OrbitalBody, &Transform)>,
-    mut gravity_boddies: Query<(Entity, &GravityBody, &Transform)>,
+    mut boddies: Query<(Entity, &mut OrbitalBody, &Transform, &Mass)>,
+    mut gravity_boddies: Query<(Entity, &Mass, &Transform)>,
 ) {
     let delta = time.delta_seconds();
-    for (id, mut orbital, tra1) in boddies.iter_mut() {
+    for (id, mut orbital, body_transform, body_mass) in boddies.iter_mut() {
         let mut force = Vec3::ZERO;
-        for (id2, GravityBody { mass }, tra2) in gravity_boddies.iter_mut() {
+        for (id2, Mass { mass, radius }, gravity_transform) in gravity_boddies.iter_mut() {
             if id == id2 {
                 continue;
             }
-            let gravity = mass / tra1.translation.distance_squared(tra2.translation)
-                * (tra2.translation - tra1.translation).normalize();
+            let gravity = mass
+                / body_transform
+                    .translation
+                    .distance_squared(gravity_transform.translation)
+                    .max(radius * radius + body_mass.radius * body_mass.radius)
+                * (gravity_transform.translation - body_transform.translation).normalize();
+
             force += gravity
         }
-        orbital.velocity += delta * force * G;
+        orbital.velocity += delta * force * G / body_mass.mass;
     }
 }
 

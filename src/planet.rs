@@ -1,3 +1,4 @@
+use bevy::math::vec3;
 use bevy::render::render_resource::AsBindGroup;
 use bevy::utils::hashbrown::HashMap;
 
@@ -12,6 +13,9 @@ pub struct PlanetMaterial {
     pub sun_rad: f32,
     #[uniform(0)]
     pub rad: f32,
+    #[uniform(0)]
+    pub pen: Vec3,
+
     #[texture(1)]
     #[sampler(2)]
     pub color: Option<Handle<Image>>,
@@ -77,12 +81,11 @@ fn load_planet_textures(
         let handle = asset_server.load(path);
         textures.entry(pt).or_insert(vec![]).push((handle, None));
     }
-    println!("{textures:#?}");
     textures
 }
 
 fn get_rand_type(dist: f32, rad: f32) -> PlanetType {
-    if rad > 7.0 {
+    if rad > 7.0 && dist > 500.0 {
         PlanetType::GasGiant
     } else if dist < 350. {
         PlanetType::Inhospitible
@@ -101,7 +104,6 @@ pub fn get_mat(
     sun_rad: f32,
     plr: &mut PlanetReasources,
     mats: &mut Assets<PlanetMaterial>,
-    asset_server: &mut AssetServer,
 ) -> Handle<PlanetMaterial> {
     let pt = get_rand_type(dist, rad);
     let avalible = plr.0.get_mut(&pt).unwrap();
@@ -114,9 +116,13 @@ pub fn get_mat(
         let mat = mats.add(PlanetMaterial {
             sun_rad,
             color: Some(pic.clone()),
+            pen: if pt == PlanetType::GasGiant {
+                vec3(1.0, 0.5, 0.25)
+            } else {
+                vec3(0.0, 0.0, 0.0)
+            },
             ..default()
         });
-        println!("{:?}", asset_server.get_load_state(pic));
 
         avalible[i].1 = Some(mat.clone());
         mat

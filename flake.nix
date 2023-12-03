@@ -17,40 +17,28 @@
         run_command = pkgs.writeShellApplication {
           name = "run";
           text = ''
-            cargo run --locked --features bevy/dynamic_linking bevy/file_watcher \$@
+            cargo run --offline --features bevy/dynamic_linking --features bevy/file_watcher \$@
           '';
         };
       in with pkgs; {
         nixpkgs.overlays = [ fenix.overlays.complete ];
         devShells.default = mkShell rec {
 
-          nativeBuildInputs =  [
-            pkg-config
-            cmake
-            pkg-config
-            freetype
-            expat
-            fontconfig
-            mold
-          ];
+          nativeBuildInputs =
+            [ pkg-config cmake pkg-config freetype expat fontconfig lld ];
 
           buildInputs = [
             run_command
             rust_toolchain
             lldb_15
-            sccache
             udev
             alsa-lib
             vulkan-loader
-            xorg.libX11
-            xorg.libXcursor
-            xorg.libXi
-            xorg.libXrandr
             libxkbcommon
-            wayland
+            wayland 
             wasm-bindgen-cli
           ];
-          LD_LIBRARY_PATH = nixpkgs.lib.makeLibraryPath buildInputs;
+          LD_LIBRARY_PATH = nixpkgs.lib.makeLibraryPath (buildInputs ++ nativeBuildInputs);
         };
       });
 }

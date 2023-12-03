@@ -2,31 +2,15 @@ struct CubemapMaterial {
     time: f32,
 };
 
-#import bevy_pbr::forward_io::VertexOutput
 
-
-#import bevy_pbr::mesh_view_bindings
-
-@group(1) @binding(0)
+@group(2) @binding(0)
 var<uniform> material: CubemapMaterial;
 
-@group(1) @binding(1)
-var noise_texture: texture_2d<f32>;
+@group(2) @binding(1) var skybox: texture_cube<f32>;
+@group(2) @binding(2) var skybox_sampler: sampler;
 
-@group(1) @binding(2)
-var noise_sampler: sampler;
-
-@group(1) @binding(3)
-var volume_texture: texture_3d<f32>;
-
-@group(1) @binding(4)
-var volume_sampler: sampler;
-
-@group(1) @binding(5)
-var base_color_texture: texture_cube<f32>;
-
-@group(1) @binding(6)
-var base_color_sampler: sampler;
+#import bevy_pbr::forward_io::VertexOutput
+#import bevy_pbr::mesh_view_bindings
 
 
 fn mie(costh: f32) -> f32 {
@@ -73,19 +57,120 @@ fn fnexp3(x: vec3<f32>) -> vec3<f32> {
     return b * b;
 }
 
+fn iSph(  ro: vec3<f32>,  rd: vec3<f32>,  ce: vec3<f32>, ra: f32 ) -> vec2<f32> {
+    let oc = ro - ce;
+    let b = dot( oc, rd );
+    let c = dot( oc, oc ) - ra*ra;
+    var h = b*b - c;
+    if h < 0.0 { return vec2(-1.0); }// no intersection
+    h = sqrt( h );
+    return vec2( -b-h, -b+h );
+}
+
+
+fn iElips1( ro: vec3<f32>, rd: vec3<f32>, ce: vec3<f32>, rad: vec3<f32>) -> f32 {
+    let oc = ro - ce;
+    
+    let ocn = oc / rad;
+    let rdn = rd / rad;
+    
+    let a = dot( rdn, rdn );
+	let b = dot( ocn, rdn );
+	let c = dot( ocn, ocn );
+	let h = b*b - a*(c - 1.0);
+	if h<0.0 { return -1.0; }
+	return (-b - sqrt( h ))/a;
+}
+
+fn iElips( ro: vec3<f32>, rd: vec3<f32>, ce: vec3<f32>, rad: vec3<f32>) -> vec2<f32> {
+    let a = iElips1(  ro,  rd,  ce, rad);
+    if a < -0.5 { return vec2(-1.0);}
+    let ro2 = ro + rd*100.;
+    let b = iElips1( ro2, -rd,  ce, rad);
+    return vec2(a,100.0 - b);
+}
+
+fn rot(a: f32) -> mat2x2<f32> {
+    let s = sin(a);
+    let c = cos(a);
+    return mat2x2(c,-s,s,c);
+}
+
+fn erot(p : vec3<f32>, ax: vec3<f32>,  ro: f32) -> vec3<f32> {
+    return mix(dot(p,ax)*ax,p,cos(ro))+sin(ro)*cross(ax,p);
+}
+
+
 @fragment
 fn fragment(
     mesh: VertexOutput,
 ) -> @location(0) vec4<f32> {
-    let rd = normalize(mesh.world_position.xyz * vec3<f32>(1.0, 1.0, -1.0));
+    let ro = mesh_view_bindings::view.world_position.xyz;
+    var rd = normalize(mesh.world_position.xyz - ro );
 
-    let grid = vec3(0.5) + smoothstep(vec3(0.9),vec3(1.0),abs(rd));
     let base = vec3(0.0);
     let lines = 10.;
-    let sig = abs(fract(rd*lines) - 0.5);
-    let col = mix(base,grid, smoothstep(0.49,0.5,max(sig.x,max(sig.y,sig.z))));
+    let hole_dir = normalize(vec3(1.0,-0.1,0.4));
+    let hole_ce = hole_dir * 10.;
+    let bhi = iSph(  vec3(0.0),  rd,  hole_ce, 2.0);
+    let disk_rad = vec3(3.,0.1,3.0);
+    var smoke = vec3(0.0) ;
+    var dens = 0.;
+    let blak = dot(rd,hole_dir);
+    let rt = 10.*exp(-20.0*(-2.0*blak+2.0));
+    rd = erot(rd,hole_dir, rt);
+    var tex = textureSample(skybox, skybox_sampler, rd).rgb;
+    tex *= 1.0 - smoothstep(0.98,0.981,blak);
+    return vec4(4.*tex,1.0);
 
-    return vec4(col, 0.);
+    // var eli = iElips(  vec3(0.0),  rd,  hole_ce , disk_rad );
+    // var end = 0.0;
+    // if bhi.x > -0.5 {
+    //     end = min(bhi.x, eli.y);
+    // } else {
+    //     end = eli.y;
+    // }
+    // for ( var T = eli.x; T<end ; T += 0.1) {
+    //     let p = rd*T;
+    //     let dp = p - hole_ce;
+    //     let r = dp.xz * rot(material.time* 0.1);
+    //     let sp = hole_ce + vec3(r.x,dp.y,r.y);
+    //     let d = max(0.,sin(sp.x * 20. )*sin(p.y * 20.)*sin(sp.z * 20. ) ) ;
+    //     smoke += exp(-dens)*d;
+    //     dens += d*10.;
+    // }
+
+    // if bhi.x > -0.5  && blak < 0.99{
+    //     let pos = bhi.x * rd;
+    //     let nor = normalize( pos - hole_ce);
+    //     let rrd = refract(rd,nor,0.42);
+    //     eli = iElips( pos,  rrd,  hole_ce , disk_rad);
+    //     let sph2 = iSph(  pos,  rrd,  hole_ce, 2.0);
+    //     for ( var T = max(sph2.y,eli.x); T<eli.y; T += 0.1) {
+    //         let p = pos + rrd*T;
+    //     let dp = p - hole_ce;
+    //     let r = dp.xz * rot(material.time * 0.1);
+    //     let sp = hole_ce + vec3(r.x,dp.y,r.y);
+    //     let d = max(0.,sin(sp.x * 20.)*sin(p.y * 20.)*sin(sp.z * 20. ) ) ;
+    //     smoke += exp(-dens)*d;
+    //     dens += d*10.;
+    //     }
+    // } else {
+    //     // return vec4(rd,1.);
+    // }
+
+    // return vec4(, 1.0);
+
+    // let g = refract()
+    
+    // var sig = vec3(1.0)*pow(0.5+0.5*sin(5000.*blak),4.0);
+    // let band_signal = 1. - max(0.,eli.y - eli.x);
+    // sig *= 1.0 - smoothstep(0.98,0.981,min(blak,band_signal));
+    // let col = mix(base,sig,smoothstep(0.972,0.975,blak));
+    
+    // // return vec4(col*100., 0.);
+    // return vec4(smoke);
+    // return vec4(1.-exp(- max(0.,eli.y - eli.x)));
 
 
 }

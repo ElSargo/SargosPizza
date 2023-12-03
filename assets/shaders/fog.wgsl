@@ -41,6 +41,6 @@ fn fragment(
     let depth = bevy_pbr::prepass_utils::prepass_depth(mesh.position, sample_index);
     let depth_lin = 1./depth;
     let fog = fog_int(ro, rd, depth_lin);
-    return vec4(1.0,1.0,1.0, 0.95 - 0.95*exp(-fog*100.));
+    return vec4(2.0,0.5,1.25, 0.95 - 0.95*exp(-fog*100.));
 
 }
